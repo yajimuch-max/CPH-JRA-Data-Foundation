@@ -1,0 +1,69 @@
+name: JRA 2024年 年間一括取得
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  january:
+    name: 1月を取得
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with: { year: "2024", month: "01", previous_state: "" }
+  february:
+    name: 2月を取得
+    needs: january
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with: { year: "2024", month: "02", previous_state: "CPH-JRA-2024-01-state" }
+  march:
+    name: 3月を取得
+    needs: february
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with: { year: "2024", month: "03", previous_state: "CPH-JRA-2024-02-state" }
+  april:
+    name: 4月を取得
+    needs: march
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with: { year: "2024", month: "04", previous_state: "CPH-JRA-2024-03-state" }
+  may:
+    name: 5月を取得
+    needs: april
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with: { year: "2024", month: "05", previous_state: "CPH-JRA-2024-04-state" }
+  june:
+    name: 6月を取得
+    needs: may
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with: { year: "2024", month: "06", previous_state: "CPH-JRA-2024-05-state" }
+  july:
+    name: 7月を取得
+    needs: june
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with: { year: "2024", month: "07", previous_state: "CPH-JRA-2024-06-state" }
+  august:
+    name: 8月を取得
+    needs: july
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with: { year: "2024", month: "08", previous_state: "CPH-JRA-2024-07-state" }
+  september:
+    name: 9月を取得
+    needs: august
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with: { year: "2024", month: "09", previous_state: "CPH-JRA-2024-08-state" }
+  october:
+    name: 10月を取得
+    needs: september
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with: { year: "2024", month: "10", previous_state: "CPH-JRA-2024-09-state" }
+  november:
+    name: 11月を取得
+    needs: october
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with: { year: "2024", month: "11", previous_state: "CPH-JRA-2024-10-state" }
+  december:
+    name: 12月取得・年間監査
+    needs: november
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with:
+      year: "2024"
+      month: "12"
+      previous_state: "CPH-JRA-2024-11-state"
+      publish_annual: true
