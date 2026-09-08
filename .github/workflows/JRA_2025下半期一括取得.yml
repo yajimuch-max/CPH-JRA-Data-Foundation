@@ -1,0 +1,61 @@
+name: JRA 2025年下半期一括取得
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  july:
+    name: 7月を取得
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with:
+      year: "2025"
+      month: "07"
+      previous_state: ""
+
+  august:
+    name: 8月を取得
+    needs: july
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with:
+      year: "2025"
+      month: "08"
+      previous_state: "CPH-JRA-2025-07-state"
+
+  september:
+    name: 9月を取得
+    needs: august
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with:
+      year: "2025"
+      month: "09"
+      previous_state: "CPH-JRA-2025-08-state"
+
+  october:
+    name: 10月を取得
+    needs: september
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with:
+      year: "2025"
+      month: "10"
+      previous_state: "CPH-JRA-2025-09-state"
+
+  november:
+    name: 11月を取得
+    needs: october
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with:
+      year: "2025"
+      month: "11"
+      previous_state: "CPH-JRA-2025-10-state"
+
+  december:
+    name: 12月を取得
+    needs: november
+    uses: ./.github/workflows/JRA_月次取得部品.yml
+    with:
+      year: "2025"
+      month: "12"
+      previous_state: "CPH-JRA-2025-11-state"
