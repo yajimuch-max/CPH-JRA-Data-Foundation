@@ -38,7 +38,7 @@ jobs:
           path: run_data
 
       - name: 軽量エンジンを展開する
-        run: unzip -q CPH_GitHub下半期取得エンジン_v0.2.zip -d engine
+        run: unzip -q ./*v0.2.zip -d engine
 
       - name: 必要ライブラリを準備する
         run: python -m pip install ./engine
