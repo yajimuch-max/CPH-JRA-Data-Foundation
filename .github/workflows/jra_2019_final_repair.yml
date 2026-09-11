@@ -1,0 +1,98 @@
+name: JRA 2019年 最終修復v2・再監査
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: jra-2019-final-repair-v2
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: 2019年 最終修復v2・CACHE_MISS補完＋全110開催日再監査
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: リポジトリを読み込む
+        uses: actions/checkout@v4
+
+      - name: Pythonを準備する
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 必須ファイルを確認する
+        run: |
+          test -f ./cph_jra_2019_final_repair_v2_engine.zip
+          test -f ./2019-integrated-base.part-01
+          test -f ./2019-integrated-base.part-02
+          test -f ./2019-integrated-base.part-03
+          test -f ./2019-integrated-base.part-04
+
+      - name: 2019統合版を復元・SHA照合する
+        run: |
+          cat ./2019-integrated-base.part-* > ./2019_JRA公式データ_年間統合版.zip
+          echo "6510312ec436a00fc942693f738b15c2fc86273e6d4b2716ff019f6711f3b854  ./2019_JRA公式データ_年間統合版.zip" | sha256sum -c -
+          mkdir -p working
+          unzip -q ./2019_JRA公式データ_年間統合版.zip -d working
+
+      - name: 修復エンジンを展開する
+        run: unzip -q ./cph_jra_2019_final_repair_v2_engine.zip -d engine
+
+      - name: 必要ライブラリを準備する
+        run: python -m pip install ./engine
+
+      - name: 既存単勝オッズを退避し依存テーブルを再監査用に外す
+        run: |
+          python engine/scripts/prepare_2019_final_repair.py             --db "working/2019_JRA公式データ_年間統合版/data/cph_jra_df.sqlite3"
+
+      - name: CACHE優先・不足日だけONLINE補完して全110開催日を再監査する
+        shell: bash
+        run: |
+          set -euo pipefail
+          python engine/scripts/reaudit_2019_all_dates.py \
+            --data-root "working/2019_JRA公式データ_年間統合版/data" \
+            --year 2019 \
+            | tee "working/2019_JRA公式データ_年間統合版/reports/2019_最終修復v2再監査.json"
+
+      - name: 年間最終監査をPASS確認する
+        shell: bash
+        run: |
+          set -euo pipefail
+          python engine/scripts/finalize_annual_audit.py \
+            --year 2019 \
+            --data-root "working/2019_JRA公式データ_年間統合版/data" \
+            --output "working/2019_JRA公式データ_年間統合版/reports/2019_年間監査結果.json"
+
+      - name: 既存単勝オッズを復元し不足レースだけmanifest化する
+        run: |
+          python engine/scripts/restore_and_manifest_missing_odds.py             --db "working/2019_JRA公式データ_年間統合版/data/cph_jra_df.sqlite3"             --output missing_odds_manifest.csv
+          echo "不足対象:"
+          cat missing_odds_manifest.csv
+
+      - name: 4月の不足レースだけ全馬単勝最終オッズ取得
+        run: |
+          python engine/scripts/collect_win_odds.py             --manifest missing_odds_manifest.csv             --year 2019 --month 4 --mode full             --output repair_odds_04
+
+      - name: 5月の不足レースだけ全馬単勝最終オッズ取得
+        run: |
+          python engine/scripts/collect_win_odds.py             --manifest missing_odds_manifest.csv             --year 2019 --month 5 --mode full             --output repair_odds_05
+
+      - name: 市場データ再構築・不足オッズ統合・最終完成版作成
+        run: |
+          mkdir -p repair_odds
+          mv repair_odds_04 repair_odds/month04
+          mv repair_odds_05 repair_odds/month05
+          python engine/scripts/finalize_2019_repaired_integrated.py             --root "working/2019_JRA公式データ_年間統合版"             --repair-odds-root repair_odds             --annual-audit "working/2019_JRA公式データ_年間統合版/reports/2019_年間監査結果.json"             --output delivery
+
+      - name: 完成版を保存する
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2019_JRA公式データ_年間統合版
+          path: delivery/*
+          if-no-files-found: error
+          retention-days: 7
