@@ -1,4 +1,5 @@
 name: JRA 原本MASTER・血統4項目・週次差分
+run-name: "JRA ${{ inputs.year }}｜${{ inputs.mode }}｜run ${{ github.run_id }}"
 on:
   workflow_dispatch:
     inputs:
@@ -33,16 +34,16 @@ on:
         description: 更新終了日 YYYY-MM-DD。空欄は当日まで
         default: ''
       with_pedigree:
-        description: 同じ実行でJRA血統4項目も取得する
+        description: 同じ実行でJRA血統4項目も取得する（本文取得中はOFF）
         type: boolean
-        default: true
+        default: false
       max_horses:
         type: string
         description: 今回の血統取得上限（取得済みの馬は省略）
         default: '500'
       max_sources:
         type: string
-        description: 保存済みRAWの再監査上限。完了分は次回スキップ
+        description: 本文の取得・再監査上限（取得済みは省略）
         default: '500'
       refresh:
         description: 完了済み対象レースも再取得して公式訂正を確認
@@ -56,10 +57,11 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: jra-original-master-collection
+  group: jra-original-master-${{ inputs.year }}
   cancel-in-progress: false
 jobs:
   collect:
+    name: "JRA ${{ inputs.year }}｜${{ inputs.mode }}"
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
