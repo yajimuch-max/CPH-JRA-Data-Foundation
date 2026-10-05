@@ -40,11 +40,11 @@ on:
       max_horses:
         type: string
         description: 今回の血統取得上限（取得済みの馬は省略）
-        default: '500'
+        default: '12000'
       max_sources:
         type: string
         description: 本文の取得・再監査上限（取得済みは省略）
-        default: '500'
+        default: '12000'
       refresh:
         description: 完了済み対象レースも再取得して公式訂正を確認
         type: boolean
