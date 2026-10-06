@@ -11,7 +11,7 @@ on:
       mode:
         description: 初回bootstrap → reaudit → pedigree／毎週update
         type: choice
-        options: [preflight, bootstrap, reaudit, update, pedigree, export]
+        options: [preflight, bootstrap, reaudit, update, pedigree, export, diagnose]
         default: preflight
       base_release_tag:
         type: string
@@ -90,12 +90,12 @@ jobs:
       - name: オフライン自己検査
         run: python -m unittest discover -s engine/tests -v
       - name: 前回stateを自動復元
-        if: inputs.mode != 'preflight'
+        if: inputs.mode != 'preflight' && inputs.mode != 'diagnose'
         run: python engine/scripts/restore_state.py --year "$TARGET_YEAR" --run-id "$RESUME_RUN_ID"
       - name: 取得・再監査・修正・統合
         run: python engine/scripts/action_run.py
       - name: 途中状態を保存（失敗時も）
-        if: always() && inputs.mode != 'preflight'
+        if: always() && inputs.mode != 'preflight' && inputs.mode != 'diagnose'
         uses: actions/upload-artifact@v4
         with:
           name: jra-original-state-${{ inputs.year }}
@@ -103,10 +103,18 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: 年別MASTERを保存
-        if: always() && inputs.mode != 'preflight'
+        if: always() && inputs.mode != 'preflight' && inputs.mode != 'diagnose'
         uses: actions/upload-artifact@v4
         with:
           name: jra-original-master-${{ inputs.year }}
           path: delivery/*
+          if-no-files-found: warn
+          retention-days: 30
+      - name: 一覧取得の調査ファイルを保存（失敗時も）
+        if: always() && inputs.mode == 'diagnose'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-discovery-diagnostics-${{ inputs.year }}
+          path: delivery/diagnostics/*
           if-no-files-found: warn
           retention-days: 30
