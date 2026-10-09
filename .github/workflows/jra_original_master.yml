@@ -1,15 +1,15 @@
-name: JRA 原本MASTER・全部まとめて差分更新
+name: JRA 原本MASTER・一括差分更新（旧年度馬場補完対応）
 run-name: "JRA ${{ inputs.year }}｜${{ inputs.mode }}｜run ${{ github.run_id }}"
 on:
   workflow_dispatch:
     inputs:
       year:
-        description: 対象年（2026から開始）
+        description: 対象年（2010〜2026以降）
         required: true
         default: '2026'
         type: string
       mode:
-        description: 毎週はupdateだけ（結果＋オッズ＋血統＋馬場）
+        description: 毎週はupdate／2010〜2017年の馬場補完はtrack
         type: choice
         options: [preflight, bootstrap, reaudit, update, pedigree, export, track, diagnose, cardprobe]
         default: update
@@ -38,7 +38,7 @@ on:
         type: boolean
         default: true
       with_track:
-        description: 含水率・クッション値・使用コースも取得（毎週はONのまま）
+        description: 馬場取得（2010〜17年は馬場状態と使用コース）
         type: boolean
         default: true
       max_horses:
@@ -50,7 +50,7 @@ on:
         description: 本文の取得・再監査上限（取得済みは省略）
         default: '12000'
       refresh:
-        description: 完了済み対象レースも再取得して公式訂正を確認
+        description: 通常OFF。旧年度trackでONなら保存済みPDFも再検証
         type: boolean
         default: false
       resume_run_id:
