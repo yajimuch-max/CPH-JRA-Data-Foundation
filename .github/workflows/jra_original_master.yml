@@ -1,17 +1,17 @@
-name: JRA 原本MASTER・一括差分更新（旧年度馬場補完対応）
+name: JRA 原本MASTER・全年一括差分更新 v0.5.0
 run-name: "JRA ${{ inputs.year }}｜${{ inputs.mode }}｜run ${{ github.run_id }}"
 on:
   workflow_dispatch:
     inputs:
       year:
-        description: 対象年（2010〜2026以降）
+        description: 対象年（2010〜2026：どの年もupdate）
         required: true
         default: '2026'
         type: string
       mode:
-        description: 毎週はupdate／2010〜2017年の馬場補完はtrack
+        description: 全年度はupdate（レース・血統・馬場・公式追加情報を一括差分更新）
         type: choice
-        options: [preflight, bootstrap, reaudit, update, pedigree, export, track, diagnose, cardprobe]
+        options: [preflight, bootstrap, reaudit, update, official_enrich, pedigree, export, track, diagnose, cardprobe]
         default: update
       base_release_tag:
         type: string
@@ -38,7 +38,11 @@ on:
         type: boolean
         default: true
       with_track:
-        description: 馬場取得（2010〜17年は馬場状態と使用コース）
+        description: 含水率・クッション値の公式馬場データ（2018年以降）
+        type: boolean
+        default: true
+      with_official:
+        description: 公式成績PDFの使用コース・競走条件・馬主・生産者・ブリンカー・変更情報
         type: boolean
         default: true
       max_horses:
@@ -50,7 +54,7 @@ on:
         description: 本文の取得・再監査上限（取得済みは省略）
         default: '12000'
       refresh:
-        description: 通常OFF。旧年度trackでONなら保存済みPDFも再検証
+        description: 通常OFF。ONだと公式データを再確認するため通信量増
         type: boolean
         default: false
       resume_run_id:
@@ -79,6 +83,7 @@ jobs:
       END_DATE: ${{ inputs.end_date }}
       WITH_PEDIGREE: ${{ inputs.with_pedigree }}
       WITH_TRACK: ${{ inputs.with_track }}
+      WITH_OFFICIAL: ${{ inputs.with_official }}
       MAX_HORSES: ${{ inputs.max_horses }}
       MAX_SOURCES: ${{ inputs.max_sources }}
       REFRESH: ${{ inputs.refresh }}
@@ -93,12 +98,12 @@ jobs:
       - name: 依存ライブラリを準備
         run: python -m pip install ./engine
       - name: 馬場公式PDFの解析ライブラリ（updateでも自動使用）
-        if: inputs.mode == 'track' || (inputs.mode == 'update' && inputs.with_track)
+        if: inputs.mode != 'preflight' && inputs.mode != 'diagnose' && inputs.mode != 'cardprobe'
         run: python -m pip install "pdfplumber>=0.11,<1" "requests>=2.31,<3"
       - name: オフライン自己検査
         run: python -m unittest discover -s engine/tests -v
       - uses: actions/cache@v4
-        if: inputs.mode == 'track' || (inputs.mode == 'update' && inputs.with_track)
+        if: inputs.mode == 'track' || inputs.mode == 'official_enrich' || (inputs.mode == 'update' && (inputs.with_track || inputs.with_official))
         with:
           path: jra_pdf_cache
           key: jra-track-cache-${{ inputs.year }}-${{ github.run_id }}
@@ -123,6 +128,22 @@ jobs:
         with:
           name: jra-track-audit-${{ inputs.year }}
           path: delivery/track_audit_*.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: 公式追加情報の取得監査を保存
+        if: always() && (inputs.mode == 'official_enrich' || (inputs.mode == 'update' && inputs.with_official))
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-official-expansion-audit-${{ inputs.year }}
+          path: delivery/official_expansion_audit_*.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: 全年共通・一括監査を保存
+        if: always() && inputs.mode == 'update'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-unified-audit-${{ inputs.year }}
+          path: delivery/unified_audit_*.json
           if-no-files-found: warn
           retention-days: 30
       - name: 年別MASTERを保存
