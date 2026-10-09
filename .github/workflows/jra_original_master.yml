@@ -1,4 +1,4 @@
-name: JRA 原本MASTER・全年一括差分更新 v0.5.2
+name: JRA 原本MASTER・全年一括差分更新 v0.5.3
 run-name: "JRA ${{ inputs.year }}｜${{ inputs.mode }}｜run ${{ github.run_id }}"
 on:
   workflow_dispatch:
