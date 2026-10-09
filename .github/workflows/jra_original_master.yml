@@ -1,4 +1,4 @@
-name: JRA 原本MASTER・血統4項目・週次差分
+name: JRA 原本MASTER・全部まとめて差分更新
 run-name: "JRA ${{ inputs.year }}｜${{ inputs.mode }}｜run ${{ github.run_id }}"
 on:
   workflow_dispatch:
@@ -9,10 +9,10 @@ on:
         default: '2026'
         type: string
       mode:
-        description: 初回bootstrap → reaudit → pedigree／毎週update
+        description: 毎週はupdateだけ（結果＋オッズ＋血統＋馬場）
         type: choice
-        options: [preflight, bootstrap, reaudit, update, pedigree, export, diagnose, cardprobe]
-        default: preflight
+        options: [preflight, bootstrap, reaudit, update, pedigree, export, track, diagnose, cardprobe]
+        default: update
       base_release_tag:
         type: string
         description: 元ZIPを置いたReleaseタグ（例 inputs-2026）
@@ -34,9 +34,13 @@ on:
         description: 更新終了日 YYYY-MM-DD。空欄は当日まで
         default: ''
       with_pedigree:
-        description: 同じ実行でJRA血統4項目も取得する（本文取得中はOFF）
+        description: 血統4項目も取得する（毎週はONのまま）
         type: boolean
-        default: false
+        default: true
+      with_track:
+        description: 含水率・クッション値・使用コースも取得（毎週はONのまま）
+        type: boolean
+        default: true
       max_horses:
         type: string
         description: 今回の血統取得上限（取得済みの馬は省略）
@@ -74,6 +78,7 @@ jobs:
       START_DATE: ${{ inputs.start_date }}
       END_DATE: ${{ inputs.end_date }}
       WITH_PEDIGREE: ${{ inputs.with_pedigree }}
+      WITH_TRACK: ${{ inputs.with_track }}
       MAX_HORSES: ${{ inputs.max_horses }}
       MAX_SOURCES: ${{ inputs.max_sources }}
       REFRESH: ${{ inputs.refresh }}
@@ -87,8 +92,18 @@ jobs:
         run: unzip -q ./jra_original_master_engine.zip -d engine
       - name: 依存ライブラリを準備
         run: python -m pip install ./engine
+      - name: 馬場公式PDFの解析ライブラリ（updateでも自動使用）
+        if: inputs.mode == 'track' || (inputs.mode == 'update' && inputs.with_track)
+        run: python -m pip install "pdfplumber>=0.11,<1" "requests>=2.31,<3"
       - name: オフライン自己検査
         run: python -m unittest discover -s engine/tests -v
+      - uses: actions/cache@v4
+        if: inputs.mode == 'track' || (inputs.mode == 'update' && inputs.with_track)
+        with:
+          path: jra_pdf_cache
+          key: jra-track-cache-${{ inputs.year }}-${{ github.run_id }}
+          restore-keys: |
+            jra-track-cache-${{ inputs.year }}-
       - name: 前回stateを自動復元
         if: inputs.mode != 'preflight' && inputs.mode != 'diagnose' && inputs.mode != 'cardprobe'
         run: python engine/scripts/restore_state.py --year "$TARGET_YEAR" --run-id "$RESUME_RUN_ID"
@@ -100,6 +115,14 @@ jobs:
         with:
           name: jra-original-state-${{ inputs.year }}
           path: state/${{ inputs.year }}/MASTER.sqlite3
+          if-no-files-found: warn
+          retention-days: 30
+      - name: 馬場PDF解析監査を保存
+        if: always() && (inputs.mode == 'track' || (inputs.mode == 'update' && inputs.with_track))
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-track-audit-${{ inputs.year }}
+          path: delivery/track_audit_*.json
           if-no-files-found: warn
           retention-days: 30
       - name: 年別MASTERを保存
