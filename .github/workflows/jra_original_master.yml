@@ -1,17 +1,17 @@
-name: JRA 原本MASTER・HTML優先差分更新 v0.6.1
+name: JRA 原本MASTER・HTML統一原本 v0.7.0
 run-name: "JRA ${{ inputs.year }}｜${{ inputs.mode }}｜run ${{ github.run_id }}"
 on:
   workflow_dispatch:
     inputs:
       year:
-        description: 対象年（2010〜2026：どの年もupdate）
+        description: 対象年（最初は2010、その後順に進む）
         required: true
-        default: '2026'
+        default: '2010'
         type: string
       mode:
-        description: 全年update（JRA公式HTML優先・含水率PDF）
+        description: 通常はupdate：原本検証と未取得分の補完
         type: choice
-        options: [preflight, bootstrap, reaudit, update, html_enrich, official_enrich, pedigree, export, track, diagnose, cardprobe]
+        options: [update, html_enrich, preflight, diagnose]
         default: update
       base_release_tag:
         type: string
@@ -38,19 +38,19 @@ on:
         type: boolean
         default: true
       with_track:
-        description: 含水率・クッション値の公式馬場データ（2018年以降）
+        description: 公式含水率・クッション値（2018年以降・公表分のみ）
         type: boolean
         default: true
       with_official:
-        description: JRA公式結果HTMLの追加照合（従来PDFの誤解析を避ける）
+        description: JRA公式HTMLで馬場・条件を全件照合（必須）
         type: boolean
         default: true
       max_html_pages:
         type: string
-        description: HTML照合上限（最大4000。時間不足ならstateから再開）
+        description: 公式HTML上限4000。未完了分だけ取得、途中保存で再開
         default: '4000'
       reset_from_release:
-        description: 旧stateを復元せず指定Releaseの原本から開始（初回やり直し専用）
+        description: 通常OFF。最新stateを捨ててReleaseからやり直す場合のみON
         type: boolean
         default: false
       max_horses:
@@ -108,7 +108,7 @@ jobs:
       - name: 依存ライブラリを準備
         run: python -m pip install ./engine
       - name: 馬場公式PDFの解析ライブラリ（updateでも自動使用）
-        if: inputs.mode != 'preflight' && inputs.mode != 'diagnose' && inputs.mode != 'cardprobe'
+        if: inputs.mode != 'preflight' && inputs.mode != 'diagnose'
         run: python -m pip install "pdfplumber>=0.11,<1" "requests>=2.31,<3"
       - name: オフライン自己検査
         run: python -m unittest discover -s engine/tests -v
@@ -122,7 +122,7 @@ jobs:
           restore-keys: |
             jra-track-cache-${{ inputs.year }}-
       - name: 前回stateを自動復元
-        if: inputs.mode != 'preflight' && inputs.mode != 'diagnose' && inputs.mode != 'cardprobe' && !inputs.reset_from_release
+        if: inputs.mode != 'preflight' && inputs.mode != 'diagnose' && !inputs.reset_from_release
         run: python engine/scripts/restore_state.py --year "$TARGET_YEAR" --run-id "$RESUME_RUN_ID"
       - name: 取得・再監査・修正・統合
         run: python engine/scripts/action_run.py
