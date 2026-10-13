@@ -1,15 +1,15 @@
-name: JRA 原本MASTER・HTML統一原本 v0.7.0
+name: JRA 原本MASTER・手動差分更新 v0.7.1.11
 run-name: "JRA ${{ inputs.year }}｜${{ inputs.mode }}｜run ${{ github.run_id }}"
 on:
   workflow_dispatch:
     inputs:
       year:
-        description: 対象年（最初は2010、その後順に進む）
+        description: 対象年（2026年から開始。必要なら変更可能）
         required: true
-        default: '2010'
+        default: '2026'
         type: string
       mode:
-        description: 通常はupdate：原本検証と未取得分の補完
+        description: 通常はupdate：最新stateを引き継ぎ未取得分を補完
         type: choice
         options: [update, html_enrich, preflight, diagnose]
         default: update
@@ -27,18 +27,18 @@ on:
         default: ''
       start_date:
         type: string
-        description: 更新開始日 YYYY-MM-DD（毎週は前回最終日から）
+        description: 更新開始日 YYYY-MM-DD（空欄ならエンジン標準範囲）
         default: ''
       end_date:
         type: string
-        description: 更新終了日 YYYY-MM-DD。空欄は当日まで
+        description: 更新終了日 YYYY-MM-DD（空欄は当日まで）
         default: ''
       with_pedigree:
         description: 血統4項目も取得する（毎週はONのまま）
         type: boolean
         default: true
       with_track:
-        description: 公式含水率・クッション値（2018年以降・公表分のみ）
+        description: 公式馬場PDF公開分のみ取得。未公開は保留して次回補完
         type: boolean
         default: true
       with_official:
@@ -107,7 +107,7 @@ jobs:
         run: unzip -q ./jra_original_master_engine.zip -d engine
       - name: 依存ライブラリを準備
         run: python -m pip install ./engine
-      - name: 馬場公式PDFの解析ライブラリ（updateでも自動使用）
+      - name: 馬場公式PDF解析の依存ライブラリ（未公開PDFはエンジン側で保留）
         if: inputs.mode != 'preflight' && inputs.mode != 'diagnose'
         run: python -m pip install "pdfplumber>=0.11,<1" "requests>=2.31,<3"
       - name: オフライン自己検査
@@ -158,7 +158,7 @@ jobs:
           path: delivery/unified_audit_*.json
           if-no-files-found: warn
           retention-days: 30
-      - name: 年別MASTERを保存
+      - name: 年別MASTER・暫定スナップショットを保存
         if: always() && inputs.mode != 'preflight' && inputs.mode != 'diagnose' && inputs.mode != 'cardprobe'
         uses: actions/upload-artifact@v4
         with:
