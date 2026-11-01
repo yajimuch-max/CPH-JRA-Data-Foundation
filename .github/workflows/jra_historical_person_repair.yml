@@ -1,0 +1,126 @@
+name: JRA 過去年・人物修復と原本再出力
+run-name: "JRA historical ${{ inputs.start_year }}-${{ inputs.end_year }} | run ${{ github.run_id }}"
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: 開始年（2010〜2025、最初は2025だけで確認）
+        required: true
+        default: '2025'
+        type: string
+      end_year:
+        description: 終了年（開始年以上、上限2025）
+        required: true
+        default: '2025'
+        type: string
+      max_html_pages:
+        description: 各年の人物照合上限。未完了なら同じ設定で再実行
+        required: true
+        default: '4000'
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      years: ${{ steps.years.outputs.years }}
+    steps:
+      - id: years
+        env:
+          START_YEAR: ${{ inputs.start_year }}
+          END_YEAR: ${{ inputs.end_year }}
+          MAX_HTML_PAGES: ${{ inputs.max_html_pages }}
+        run: |
+          python - <<'PY'
+          import os,json
+          lo=int(os.environ['START_YEAR']);hi=int(os.environ['END_YEAR']);pages=int(os.environ['MAX_HTML_PAGES'])
+          assert 2010<=lo<=hi<=2025 and 1<=pages<=4000,'Invalid historical range or page limit'
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('years='+json.dumps(list(range(hi,lo-1,-1)))+'\n')
+          PY
+  repair:
+    needs: plan
+    name: "修復・原本再出力 ${{ matrix.year }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        year: ${{ fromJSON(needs.plan.outputs.years) }}
+    concurrency:
+      group: jra-original-master-${{ matrix.year }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_YEAR: ${{ matrix.year }}
+      MODE: people_repair
+      BASE_RELEASE_TAG: inputs-${{ matrix.year }}
+      BASE_ASSET_NAME: ${{ matrix.year }}_JRA_MASTER.zip
+      MAX_HTML_PAGES: ${{ inputs.max_html_pages }}
+      RESET_FROM_RELEASE: 'false'
+      RESUME_RUN_ID: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 取得エンジンを準備
+        run: |
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('jra_original_master_engine.zip') as z:
+              assert z.testzip() is None
+              z.extractall('engine')
+          PY
+          python -m pip install -e engine "pdfplumber>=0.11,<1" "requests>=2.31,<3"
+      - name: オフライン自己検査
+        env:
+          PYTHONPATH: engine
+        run: |
+          python -m unittest discover -s engine/tests -v
+          python -m unittest discover -s tests -v
+      - name: 元原本を取得・ハッシュ確認
+        run: |
+          mkdir -p inputs
+          gh release download "$BASE_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$BASE_ASSET_NAME" --dir inputs --clobber
+          python scripts/historical_person_export.py --year "$TARGET_YEAR" --source "inputs/$BASE_ASSET_NAME" --verify-source-only
+      - uses: actions/cache@v4
+        with:
+          path: jra_person_cache
+          key: jra-historical-person-${{ matrix.year }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: jra-historical-person-${{ matrix.year }}-
+      - name: 同年の最新stateを復元（元原本へリセットしない）
+        run: python engine/scripts/restore_state.py --year "$TARGET_YEAR"
+      - name: 人物欠損を修復
+        run: python engine/scripts/action_run.py
+      - name: 元原本との保持検査・正式原本再監査・ZIP出力
+        run: |
+          python scripts/historical_person_export.py --year "$TARGET_YEAR" --source "inputs/$BASE_ASSET_NAME" --db "state/$TARGET_YEAR/MASTER.sqlite3" --output delivery
+      - name: 再開用stateを保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-original-state-${{ matrix.year }}
+          path: state/${{ matrix.year }}/MASTER.sqlite3
+          if-no-files-found: warn
+          retention-days: 90
+      - name: 人物修復・保持検査・原本監査を保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-historical-audit-${{ matrix.year }}
+          path: delivery/*.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: 検査合格した正式原本を保存
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-original-master-${{ matrix.year }}
+          path: |
+            delivery/${{ matrix.year }}_JRA_MASTER.zip
+            delivery/${{ matrix.year }}_JRA_MASTER.zip.sha256
+          if-no-files-found: error
+          retention-days: 90

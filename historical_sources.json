@@ -1,0 +1,98 @@
+{
+  "2013": {
+    "tag": "inputs-2013",
+    "asset": "2013_JRA_MASTER.zip",
+    "source_zip_sha256": "30b299d7a60631a8c4743f703cd0844875abb0c3bed7e467d6c017149b2e12d5",
+    "master_sha256": "86202336f2d0ab58070c13670ad3db527cd7f57173d653adee1be21c6617f531"
+  },
+  "2023": {
+    "tag": "inputs-2023",
+    "asset": "2023_JRA_MASTER.zip",
+    "source_zip_sha256": "8c61f40fb60e0acd574105dea1a59f55ff2ef681c5745b18350395392d6c81b7",
+    "master_sha256": "7bdb3cdeb29098db3f15f1ad772b88c35e4695c3972530b6ac0a35c58b3e3542"
+  },
+  "2019": {
+    "tag": "inputs-2019",
+    "asset": "2019_JRA_MASTER.zip",
+    "source_zip_sha256": "e7151f9df07663476252b366d0d01d2d542d33d564035d79544ddacc2f29d0af",
+    "master_sha256": "a548db6780a70727ea6b120cb8d4deeef6c2ece2c1e731e82fb9ca6de686e5e8"
+  },
+  "2018": {
+    "tag": "inputs-2018",
+    "asset": "2018_JRA_MASTER.zip",
+    "source_zip_sha256": "6d07a7f2f7ae6beee60e3a0ae85a35cf43b924e70b6ebdf0f39823b6ff99cd31",
+    "master_sha256": "af48931f8f7345ee06e836b06fb55f1b3a7816e03b54a6ecbd98c92c7435cae8"
+  },
+  "2022": {
+    "tag": "inputs-2022",
+    "asset": "2022_JRA_MASTER.zip",
+    "source_zip_sha256": "af91f24d862dc7be00011a58f421a566ef3b6a7f5ba468eaa3ccbd2ba323499e",
+    "master_sha256": "770d28d4e1a29770425a708e25ade970ebbf012dd72e568cb60c22382af346e2"
+  },
+  "2020": {
+    "tag": "inputs-2020",
+    "asset": "2020_JRA_MASTER.zip",
+    "source_zip_sha256": "a410c7b76989f8d0a336b444e629a42aba302ae0dd9474c440572a7f70dc8d3e",
+    "master_sha256": "b16f0ff9726166288c96cdab9f5ee12a55ebd4686450f55256ce224abe4e8698"
+  },
+  "2014": {
+    "tag": "inputs-2014",
+    "asset": "2014_JRA_MASTER.zip",
+    "source_zip_sha256": "817cd638caafc7f26c68d0feb1e3a2e974b45642380f08205497eb5d9e460d8d",
+    "master_sha256": "d00aedaab69e73ef5c7ed9c97787b67f74c32ccc167cb9c6990342592299b3c3"
+  },
+  "2015": {
+    "tag": "inputs-2015",
+    "asset": "2015_JRA_MASTER.zip",
+    "source_zip_sha256": "2c8da95e09934abedceae2380e6e6dd228b34a7c3da20adb8791120a27953977",
+    "master_sha256": "b700671afc4bf0ec0db55c4271443b4472379121e46a035303db56793cb2ef2b"
+  },
+  "2025": {
+    "tag": "inputs-2025",
+    "asset": "2025_JRA_MASTER.zip",
+    "source_zip_sha256": "032f80d8510b6e0ee76bd417a7b3b85e641f58cb3d0e60efd15ec9f101390ae2",
+    "master_sha256": "b678436809a19f80de8c9c3daadba83b7003621ee98de526321b3a6df41b5f0d"
+  },
+  "2012": {
+    "tag": "inputs-2012",
+    "asset": "2012_JRA_MASTER.zip",
+    "source_zip_sha256": "800a8089a91570214f9a2783fd56baed9d6a011f56779224f9dc2c69c668779a",
+    "master_sha256": "c733f7cf2c2ff396e0dd2ec9e04d3782e9caafad70fbcccd09ce84f0309fd05d"
+  },
+  "2024": {
+    "tag": "inputs-2024",
+    "asset": "2024_JRA_MASTER.zip",
+    "source_zip_sha256": "9c1d66c0f8c5e4ef5aa7357a779686ad3436c6cac4723097079cd21933f99829",
+    "master_sha256": "318526ad1c2df18894ab03b4eab538f3a95f927b4cb9609abccdcbb2fbede557"
+  },
+  "2021": {
+    "tag": "inputs-2021",
+    "asset": "2021_JRA_MASTER.zip",
+    "source_zip_sha256": "727164057d381affa01e3b57ec63e019b434fa446e024b0301567ef6abd47fc1",
+    "master_sha256": "1e61a93c1e27df071646881a1381bbf14f0424fc047d549e85872504922290ff"
+  },
+  "2016": {
+    "tag": "inputs-2016",
+    "asset": "2016_JRA_MASTER.zip",
+    "source_zip_sha256": "966b97a686e1ffa6c557676ca2d138aa75fff568d6d9cd1319dca6fcfd098f3d",
+    "master_sha256": "4921f4154eaae3bba9cf184224bac39ca5e4a3e6175b5149be0f2ff75ba4adc2"
+  },
+  "2017": {
+    "tag": "inputs-2017",
+    "asset": "2017_JRA_MASTER.zip",
+    "source_zip_sha256": "e3444e67e083a869ec7f6ae0754ef94837fb4e745283c1660cb743990982de14",
+    "master_sha256": "2ae2977ee6388486b32d177d378d2c136546e79d3b1069d8d6b3ab50a5d32073"
+  },
+  "2010": {
+    "tag": "inputs-2010",
+    "asset": "2010_JRA_MASTER.zip",
+    "source_zip_sha256": "eb37f4a2b7254dc498ea3e54f79521084de5de70b94711d553b02aea41e61a31",
+    "master_sha256": "894cba2ce4563c05b7cddca1c06704038dd9943a9efee0be2268c623724243b4"
+  },
+  "2011": {
+    "tag": "inputs-2011",
+    "asset": "2011_JRA_MASTER.zip",
+    "source_zip_sha256": "d4a961627cde96a9db8d6d7068703bf35184d18ff6c40f1131f0b131b2dd1c59",
+    "master_sha256": "2a53c53bcdf10f8595fcf40ba47bc6cbb1cbc11fbf654944be380a279226cf36"
+  }
+}
