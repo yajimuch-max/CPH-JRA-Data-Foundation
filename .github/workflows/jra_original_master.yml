@@ -1,4 +1,4 @@
-name: JRA 原本MASTER・手動差分更新 v0.7.1.11
+name: JRA 原本MASTER・手動差分更新 v0.7.1.13
 run-name: "JRA ${{ inputs.year }}｜${{ inputs.mode }}｜run ${{ github.run_id }}"
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
       mode:
         description: 通常はupdate：最新stateを引き継ぎ未取得分を補完
         type: choice
-        options: [update, html_enrich, preflight, diagnose]
+        options: [update, people_repair, html_enrich, preflight, diagnose]
         default: update
       base_release_tag:
         type: string
@@ -113,11 +113,12 @@ jobs:
       - name: オフライン自己検査
         run: python -m unittest discover -s engine/tests -v
       - uses: actions/cache@v4
-        if: inputs.mode == 'track' || inputs.mode == 'official_enrich' || inputs.mode == 'html_enrich' || (inputs.mode == 'update' && (inputs.with_track || inputs.with_official))
+        if: inputs.mode == 'people_repair' || inputs.mode == 'track' || inputs.mode == 'official_enrich' || inputs.mode == 'html_enrich' || (inputs.mode == 'update' && (inputs.with_track || inputs.with_official))
         with:
           path: |
             jra_pdf_cache
             jra_html_cache
+            jra_person_cache
           key: jra-track-cache-${{ inputs.year }}-${{ github.run_id }}
           restore-keys: |
             jra-track-cache-${{ inputs.year }}-
@@ -157,6 +158,14 @@ jobs:
           name: jra-unified-audit-${{ inputs.year }}
           path: delivery/unified_audit_*.json
           if-no-files-found: warn
+          retention-days: 30
+      - name: 騎手・調教師修復監査を保存
+        if: always() && inputs.mode == 'people_repair'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-person-repair-audit-${{ inputs.year }}
+          path: delivery/person_repair_audit_*.json
+          if-no-files-found: error
           retention-days: 30
       - name: 年別MASTER・暫定スナップショットを保存
         if: always() && inputs.mode != 'preflight' && inputs.mode != 'diagnose' && inputs.mode != 'cardprobe'
