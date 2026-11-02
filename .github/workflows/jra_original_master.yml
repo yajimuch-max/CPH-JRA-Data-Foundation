@@ -1,4 +1,4 @@
-name: JRA 原本MASTER・手動差分更新 v0.7.1.13
+name: JRA 原本MASTER・手動差分更新 v0.7.1.14
 run-name: "JRA ${{ inputs.year }}｜${{ inputs.mode }}｜run ${{ github.run_id }}"
 on:
   workflow_dispatch:
