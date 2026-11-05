@@ -1,0 +1,29 @@
+name: JRA 返還修正の自己検査
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: パッケージ展開・依存準備
+        run: |
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('jra_original_master_engine.zip') as z:
+              assert z.testzip() is None
+              z.extractall('engine')
+          PY
+          python -m pip install -e engine "pdfplumber>=0.11,<1" "requests>=2.31,<3"
+      - name: オフライン単体テスト
+        env:
+          PYTHONPATH: engine
+        run: |
+          python -m unittest discover -s engine/tests -v
+          python -m unittest discover -s tests -v
