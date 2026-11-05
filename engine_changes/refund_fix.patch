@@ -1,0 +1,319 @@
+--- /dev/null
++++ b/jra_master/refunds.py
+@@ -0,0 +1,145 @@
++"""Official refund evidence, independent of model inputs and normal payouts."""
++import json,re,time,unicodedata,urllib.parse
++from pathlib import Path
++from bs4 import BeautifulSoup
++from .jra_parser import decode_jra,parse_result
++from .store import encode,now,sha
++from .network import Deferred
++
++VERSION='REFUND_HTML_1.0.0'
++INACTIVE={'取消','除外','SCRATCHED','EXCLUDED','CANCELLED'}
++
++def parse_refunds(body):
++    soup=BeautifulSoup(decode_jra(body),'lxml')
++    def text(node):return unicodedata.normalize('NFKC',node.get_text(' ',strip=True))
++    candidates=[]
++    for node in soup.find_all(string=re.compile('返還馬番')):
++        section=node.find_parent('dl')
++        if section and section.find('dt') and text(section.find('dt'))=='返還':
++            candidates.append(text(section));continue
++        section=node.find_parent('tr')
++        if section and section.find('th') and text(section.find('th'))=='返還':
++            candidates.append(text(section));continue
++        parent=node.parent
++        for _ in range(4):
++            value=text(parent)
++            if re.search(r'返還馬番\s*\d',value):
++                candidates.append(value);break
++            parent=parent.parent
++            if parent is None:break
++    marker=soup.find(string=re.compile('返還馬番'))
++    if marker and not candidates:raise ValueError('REFUND_NUMBERS_UNPARSED')
++    if not candidates:
++        # A payout section labelled refund must not silently become "none".
++        for tag in soup.find_all(['dt','th']):
++            if text(tag)=='返還':raise ValueError('REFUND_SECTION_UNPARSED')
++        return []
++    numbers=set();frames=set()
++    for value in candidates:
++        m=re.search(r'返還馬番\s*([\d\s番、,・，]+)',value)
++        if not m:raise ValueError('REFUND_NUMBERS_UNPARSED')
++        numbers.update(map(int,re.findall(r'\d+',m[1])))
++        m=re.search(r'返還(?:同枠|枠番)\s*([\d\s枠、,・，]+)',value)
++        if m:frames.update(map(int,re.findall(r'\d+',m[1])))
++        elif re.search('返還(?:同枠|枠番)',value):raise ValueError('REFUND_FRAMES_UNPARSED')
++    if not numbers or any(not 1<=n<=28 for n in numbers) or any(not 1<=n<=8 for n in frames):
++        raise ValueError('REFUND_NUMBER_OUT_OF_RANGE')
++    return [dict(bet_type='REFUND',line_number=1,combination_text=None,
++                 payout_yen=None,payout_popularity=None,official_text='; '.join(dict.fromkeys(candidates)),
++                 special_status='返還馬番 '+'、'.join(str(n)+'番' for n in sorted(numbers))+
++                 (' 返還枠番 '+'、'.join(str(n)+'枠' for n in sorted(frames)) if frames else ''),
++                 refund_horse_numbers=sorted(numbers),refund_frame_numbers=sorted(frames))]
++
++def schema(c):
++    c.execute('''CREATE TABLE IF NOT EXISTS refund_receipts(
++      race_id TEXT PRIMARY KEY REFERENCES races(race_id),parser_version TEXT NOT NULL,
++      status TEXT NOT NULL,source_url TEXT,source_sha256 TEXT,checked_at TEXT NOT NULL,
++      refund_numbers_json TEXT,reason TEXT)''')
++
++def validate(parsed,rows):
++    states={r.horse_no:r.finish_status for r in parsed.results}
++    numbers=[n for row in rows for n in row['refund_horse_numbers']]
++    if any(n not in states or states[n] not in INACTIVE for n in numbers):
++        raise ValueError('REFUND_NOT_A_CANCELLED_OR_EXCLUDED_RUNNER')
++
++def record_receipt(c,rid,body,url,rows):
++    c.execute('INSERT OR REPLACE INTO refund_receipts VALUES(?,?,?,?,?,?,?,?)',
++              (rid,VERSION,'PASS',url,sha(body),now(),encode(rows[0]['refund_horse_numbers'] if rows else []),None))
++
++def apply(s,parsed,body,sid,url):
++    rows=parse_refunds(body);validate(parsed,rows);rid=parsed.race_key
++    schema(s.c)
++    original=dict(s.c.execute('select horse_number,horse_id from runners where race_id=?',(rid,)))
++    if original!={r.horse_no:r.horse_id for r in parsed.entries}:raise ValueError('REFUND_RUNNER_IDENTITY_MISMATCH')
++    # This repair cannot change cancellation states, person fields or results.
++    states={no:json.loads(raw).get('finish_status') for no,raw in s.c.execute('select horse_number,payload_json from results where race_id=?',(rid,))}
++    if states!={r.horse_no:r.finish_status for r in parsed.results}:raise ValueError('REFUND_RESULT_STATUS_MISMATCH')
++    existing=s.c.execute("select * from payouts where race_id=? and bet_type='REFUND'",(rid,)).fetchall()
++    if not rows and existing:raise ValueError('EXISTING_REFUND_MISSING_FROM_OFFICIAL_PAGE')
++    if len(existing)>1:raise ValueError('AMBIGUOUS_EXISTING_REFUND_ROWS')
++    if existing and existing[0]['line_number']!=1:raise ValueError('UNSUPPORTED_REFUND_LINE_NUMBER')
++    with s.c:
++        for row in rows:
++            s.put('payouts',['race_id','bet_type','line_number'],dict(race_id=rid,bet_type='REFUND',line_number=1,payload_json=encode(row)),sid,'OFFICIAL_REFUND_RECONCILIATION_'+VERSION)
++        record_receipt(s.c,rid,body,url,rows)
++        if sid:s.c.execute('INSERT OR IGNORE INTO race_sources VALUES(?,?,?)',(rid,'REFUND_HTML',sid))
++    return bool(rows)
++
++def audit(c,year):
++    tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
++    total=c.execute('select count(*) from races where race_date like ?',(f'{year}-%',)).fetchone()[0]
++    verified=0;mismatches=0;invalid=[]
++    if 'refund_receipts' in tables:
++        receipts=c.execute("select p.race_id,p.refund_numbers_json,p.source_sha256 from refund_receipts p join races r using(race_id) where r.race_date like ? and p.parser_version=? and p.status='PASS'",(f'{year}-%',VERSION)).fetchall()
++        for rid,raw,digest in receipts:
++            try:
++                expected=json.loads(raw)
++                existing=[json.loads(row[0]) for row in c.execute("select payload_json from payouts where race_id=? and bet_type='REFUND'",(rid,))]
++                numbers=[n for row in existing for n in row.get('refund_horse_numbers',[])]
++                states={no:json.loads(payload).get('finish_status') for no,payload in c.execute('select horse_number,payload_json from results where race_id=?',(rid,))}
++                ok=(isinstance(expected,list) and len(digest or '')==64 and sorted(expected)==sorted(numbers)
++                    and len(existing)==int(bool(expected)) and all(states.get(n) in INACTIVE for n in expected))
++            except (ValueError,TypeError,AttributeError):ok=False
++            if ok:verified+=1
++            else:mismatches+=1;invalid.append(rid)
++    return dict(status='PASS' if total and verified==total else 'NOT_FULLY_VERIFIED',total_races=total,verified_races=verified,remaining=total-verified,receipt_data_mismatches=mismatches,receipt_data_mismatch_races=invalid,version=VERSION)
++
++def run(s,client,year,cache,max_pages=4000,budget_seconds=10800):
++    from .person_repair import result_url
++    if not 2010<=year<=2026:raise ValueError('UNSUPPORTED_YEAR')
++    meta=s.c.execute("select value from metadata where key='year'").fetchone()
++    if not meta or json.loads(meta[0])!=year:raise ValueError('WRONG_YEAR_MASTER')
++    if s.c.execute('select 1 from races where race_date not like ? limit 1',(f'{year}-%',)).fetchone():raise ValueError('CROSS_YEAR_MASTER')
++    schema(s.c);s.c.commit();cache=Path(cache)/str(year);cache.mkdir(parents=True,exist_ok=True)
++    queue=s.c.execute("select r.race_id from races r left join refund_receipts p using(race_id) where p.race_id is null or p.parser_version<>? or p.status<>'PASS' order by r.race_id",(VERSION,)).fetchall()
++    for rid in audit(s.c,year)['receipt_data_mismatch_races']:
++        if rid not in {row[0] for row in queue}:queue.append((rid,))
++    started=time.monotonic();errors=[];checked=0
++    for row in queue[:max_pages]:
++        if time.monotonic()-started>budget_seconds-40:break
++        rid=row[0];url=None
++        try:
++            url=result_url(s.c,rid)
++            u=urllib.parse.urlsplit(url)
++            if u.scheme!='https' or u.netloc!='www.jra.go.jp' or u.path!='/JRADB/accessS.html' or not u.query:
++                raise ValueError('UNEXPECTED_SOURCE_URL')
++            p=cache/(rid+'.html')
++            if p.exists():
++                body=p.read_bytes();parsed=parse_result(body,rid[:10])
++                if parsed.race_key!=rid:raise ValueError('CACHED_REFUND_RACE_MISMATCH')
++                sid=s.source(dict(service='JRA',role='REFUND_CACHED_HTML',url=url,entity_sha256=sha(body),integrated_at=now(),raw_state='RETAINED_REFUND_CACHE'));s.c.commit()
++            else:
++                body,sid,_=client.request(url,'REFUND_HTML');parsed=parse_result(body,rid[:10])
++            if parsed.race_key!=rid:raise ValueError('REFUND_RACE_MISMATCH')
++            apply(s,parsed,body,sid,url)
++            tmp=p.with_suffix('.tmp');tmp.write_bytes(body);tmp.replace(p);checked+=1
++        except Deferred:break
++        except Exception as exc:
++            errors.append(dict(race_id=rid,reason=str(exc)))
++            with s.c:s.c.execute('INSERT OR REPLACE INTO refund_receipts VALUES(?,?,?,?,?,?,?,?)',(rid,VERSION,'FAIL',url,None,now(),None,str(exc)))
++            if any(t in str(exc) for t in ['HTTP_403','HTTP_401','UNEXPECTED_SOURCE']):break
++        if checked and checked%100==0:print('REFUND_PROGRESS',year,checked,flush=True)
++        if len(errors)>=20:break
++    result=audit(s.c,year)|dict(year=year,checked_this_run=checked,errors=errors,checked_at=now())
++    s.meta('refund_audit_required',True);s.meta('refund_latest_audit',result)
++    return result
+--- a/jra_master/racing.py
++++ b/jra_master/racing.py
+@@ -10,6 +10,8 @@
+ BET={'単勝':'WIN','複勝':'PLACE','枠連':'BRACKET_QUINELLA','馬連':'QUINELLA','ワイド':'WIDE','馬単':'EXACTA','3連複':'TRIO','3連単':'TRIFECTA'}
+ def n(x):
+  m=re.search(r'\d[\d,]*',x);return int(m[0].replace(',','')) if m else None
++
++from . import refunds
+ 
+ def parse_all(body):
+  p=parse_result(body);soup=BeautifulSoup(decode_jra(body),'lxml');race=p.as_dict();race.pop('entries');race.pop('results');race['race_type']='JUMP' if p.surface=='障害' else 'FLAT'
+@@ -33,6 +35,7 @@
+   if heading=='ハロンタイム' and td:
+    vals=re.findall(r'\d+\.\d+',compact_text(td));laps=[{'lap_index':i,'lap_time_seconds':float(v)} for i,v in enumerate(vals,1)]
+   if 'コーナー' in heading and td and re.search(r'\d',heading):corners.append({'corner_index':heading,'order_text':compact_text(td)})
++ refund_rows=refunds.parse_refunds(body);refunds.validate(p,refund_rows);payouts.extend(refund_rows)
+  return p,race,payouts,laps,corners,extra,links
+ 
+ def integrate_result(s,body,sid,expected_id=None):
+@@ -41,6 +44,8 @@
+  # Validate whole page before writing. Known runner identity changes require investigation.
+  old=s.c.execute('SELECT horse_number,horse_id FROM runners WHERE race_id=?',(rid,)).fetchall()
+  if old and dict((r[0],r[1]) for r in old)!={r.horse_no:r.horse_id for r in p.entries}:raise ValueError('RUNNER_IDENTITY_SET_MISMATCH')
++ refunds.schema(s.c)
++ if not any(x['bet_type']=='REFUND' for x in payouts) and s.c.execute("select 1 from payouts where race_id=? and bet_type='REFUND'",(rid,)).fetchone():raise ValueError('EXISTING_REFUND_MISSING_FROM_OFFICIAL_PAGE')
+  with s.c:
+   prior=s.c.execute('SELECT payload_json FROM races WHERE race_id=?',(rid,)).fetchone();payload=json.loads(prior[0]) if prior else {};payload.update(race)
+   s.put('races',['race_id'],{'race_id':rid,'race_date':p.race_date,'track':p.track,'race_number':p.race_no,'race_type':race['race_type'],'payload_json':encode(payload)},sid)
+@@ -54,6 +59,9 @@
+     if table=='payouts':row['bet_type']=rec['bet_type']
+     s.put(table,['race_id',key]+(['bet_type'] if table=='payouts' else []),row,sid)
+   s.c.execute('INSERT OR IGNORE INTO race_sources VALUES (?,?,?)',(rid,'RESULT_HTML',sid))
++  source=s.c.execute('select url from source_records where source_id=?',(sid,)).fetchone()
++  refunds.record_receipt(s.c,rid,body,source[0] if source else None,[x for x in payouts if x['bet_type']=='REFUND'])
++  s.c.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',('refund_audit_required','true'))
+  return rid,p
+ 
+ def _official_odds_name_matches(horse_id, canonical_name, odds_display_name):
+--- a/jra_master/unified_export.py
++++ b/jra_master/unified_export.py
+@@ -14,7 +14,7 @@
+ import zipfile
+ from pathlib import Path
+ 
+-VERSION='JRA_UNIFIED_HTML_v0.7.1.14-discovery-reconciliation'
++VERSION='JRA_UNIFIED_HTML_v0.7.1.15-refund-reconciliation'
+ CORE=('races','horses','runners','results','win_odds','payouts','laps','corners','pedigree','pedigree_receipts')
+ OBSOLETE_PREFIXES=('official_expansion_', 'official_legacy_')
+ UNWANTED_TABLES=('official_race_track_context','official_track_revisions')
+@@ -73,6 +73,10 @@
+  track_required=year>=2018
+  track_complete=not track_required or stages.get('track',{}).get('status')=='PASS'
+  blockers=[]
++ from .refunds import audit as refund_audit
++ refund_coverage=refund_audit(c,year)
++ refund_required=c.execute("select value from metadata where key='refund_audit_required'").fetchone()
++ if refund_required and json.loads(refund_required[0]) and refund_coverage['status']!='PASS':blockers.append('REFUND_HTML_NOT_ALL_VERIFIED')
+  people=audit_people(c)
+  if people['status']!='PASS':blockers.append('MISSING_REQUIRED_PERSON_NAMES')
+  if any(missing.values()):blockers.append('MISSING_CORE_RUNNERS')
+@@ -95,7 +99,7 @@
+      html_blinker_positive=blinkers_seen, blinker_provenance_mismatches=bad_blinkers,
+      races_with_payouts=payout_races, html_races_with_verified_required_fields=html_good,
+      html_required_fields_remaining=invalid_html_going, stages=stages,
+-     blockers=blockers, person_fields=people, restricted_pdf_policy='No PDF result/course supplemental fields; only JRA official moisture/cushion measurements from published period.',
++     blockers=blockers, person_fields=people, refund_coverage=refund_coverage, restricted_pdf_policy='No PDF result/course supplemental fields; only JRA official moisture/cushion measurements from published period.',
+      timing='Historical result HTML is post-event; not a pre-race snapshot.',
+      coverage_scope='All races recorded in this MASTER. Annual race-calendar completeness requires separate source-list audit.')
+ 
+--- a/jra_master/full_update.py
++++ b/jra_master/full_update.py
+@@ -13,7 +13,7 @@
+ import zipfile
+ from pathlib import Path
+ 
+-VERSION='JRA_MASTER_HTML_UNIFIED_v0.7.1.14-discovery-reconciliation'
++VERSION='JRA_MASTER_HTML_UNIFIED_v0.7.1.15-refund-reconciliation'
+ CORE=('races','horses','runners','results','win_odds','payouts','laps','corners','pedigree', 'pedigree_receipts')
+ 
+ def _counts(c, tables):
+--- /dev/null
++++ b/tests/test_refunds.py
+@@ -0,0 +1,77 @@
++import json,tempfile,unittest
++from pathlib import Path
++from dataclasses import replace
++from unittest.mock import patch
++from jra_master import refunds
++from jra_master.store import Store
++from jra_master.model import ParsedRace,RaceEntry,RaceResult
++
++RID='2024-04-14-中山-11'
++def body(text):return ('<html>'+text+'</html>').encode('cp932')
++class RefundTests(unittest.TestCase):
++ def setUp(self):
++  self.tmp=tempfile.TemporaryDirectory();self.s=Store(Path(self.tmp.name)/'MASTER.sqlite3');self.s.meta('year',2024)
++  e=RaceEntry(16,8,'2021100001','TEST','牡3',57.,None,'騎手',None,'調教師',500,None)
++  self.parsed=ParsedRace('2024-04-14','中山','3回中山8日',11,'皐月賞','芝',2000,'芝右','15:40','晴','良','GⅠ',[e],[RaceResult(16,'除外',None,None,None)])
++  with self.s.c:
++   self.s.c.execute('insert into races values(?,?,?,?,?,?)',(RID,'2024-04-14','中山',11,'FLAT','{}'))
++   self.s.c.execute('insert into horses values(?,?)',(e.horse_id,e.horse_name))
++   self.s.c.execute('insert into runners values(?,?,?,?)',(RID,16,e.horse_id,'{"jockey_name":"騎手"}'))
++   self.s.c.execute('insert into results values(?,?,?)',(RID,16,'{"finish_status":"除外"}'))
++   self.s.c.execute('insert into payouts values(?,?,?,?)',(RID,'WIN',1,'{"payout_yen":480}'))
++ def tearDown(self):self.s.c.close();self.tmp.cleanup()
++ def test_official_text_and_fullwidth(self):
++  for text in ['<dl><dt>返還</dt><dd>返還馬番　16番</dd></dl>','<table><tr><th>返還</th><td><span>返還馬番</span><b>１６番、１番</b> 返還同枠 ８枠</td></tr></table>']:
++   rows=refunds.parse_refunds(body(text));self.assertIn(16,rows[0]['refund_horse_numbers']);self.assertIsNone(rows[0]['payout_yen'])
++  self.assertEqual(rows[0]['refund_frame_numbers'],[8]);self.assertEqual(rows[0]['refund_horse_numbers'],[1,16])
++ def test_absent_is_not_generic_footer(self):
++  self.assertEqual(refunds.parse_refunds(body('<p>返還の対象となります</p>')),[])
++ def test_malformed_is_not_none(self):
++  for text in ['<dl><dt>返還</dt><dd>不明</dd></dl>','<p>返還馬番 不明</p>','<p>返還馬番 99番</p>']:
++   with self.assertRaises(ValueError):refunds.parse_refunds(body(text))
++ def test_finished_runner_refund_rejected(self):
++  with self.assertRaisesRegex(ValueError,'CANCELLED'):
++   refunds.validate(replace(self.parsed,results=[RaceResult(16,'FINISHED',1,'2:00.0',None)]),refunds.parse_refunds(body('<p>返還馬番16番</p>')))
++ def test_repair_is_idempotent_preserves_learning_and_normal_payout(self):
++  before={t:[tuple(x) for x in self.s.c.execute('select * from '+t)] for t in ['races','horses','runners','results']}
++  b=body('<p>返還馬番16番</p>')
++  refunds.apply(self.s,self.parsed,b,None,'https://www.jra.go.jp/JRADB/accessS.html?CNAME=TEST')
++  refunds.apply(self.s,self.parsed,b,None,'https://www.jra.go.jp/JRADB/accessS.html?CNAME=TEST')
++  for t,rows in before.items():self.assertEqual(rows,[tuple(x) for x in self.s.c.execute('select * from '+t)])
++  self.assertEqual(self.s.c.execute("select payload_json from payouts where bet_type='WIN'").fetchone()[0],'{"payout_yen":480}')
++  self.assertEqual(self.s.c.execute('select count(*) from revisions').fetchone()[0],0)
++  self.assertEqual(refunds.audit(self.s.c,2024)['status'],'PASS')
++ def test_wrong_horse_and_status_do_not_write(self):
++  for parsed in [replace(self.parsed,entries=[replace(self.parsed.entries[0],horse_id='OTHER')]),replace(self.parsed,results=[replace(self.parsed.results[0],finish_status='取消')])]:
++   with self.assertRaises(ValueError):refunds.apply(self.s,parsed,body('<p>返還馬番16番</p>'),None,None)
++  self.assertEqual(self.s.c.execute('select count(*) from payouts').fetchone()[0],1)
++ def test_existing_refund_not_silently_deleted(self):
++  refunds.apply(self.s,self.parsed,body('<p>返還馬番16番</p>'),None,None)
++  with self.assertRaises(ValueError):refunds.apply(self.s,self.parsed,body('<p>none</p>'),None,None)
++ def test_absence_receipt_and_missing_coverage(self):
++  self.assertEqual(refunds.audit(self.s.c,2024)['remaining'],1)
++  refunds.apply(self.s,self.parsed,body('<p>none</p>'),None,None)
++  self.assertEqual(refunds.audit(self.s.c,2024)['status'],'PASS')
++ def test_resumes_only_unverified_pages(self):
++  url='https://www.jra.go.jp/JRADB/accessS.html?CNAME=OBSERVED';b=body('<p>返還馬番16番</p>')
++  class Client:
++   def request(self,*a):return b,None,None
++  with patch('jra_master.person_repair.result_url',return_value=url),patch('jra_master.refunds.parse_result',return_value=self.parsed):
++   x=refunds.run(self.s,Client(),2024,self.tmp.name);y=refunds.run(self.s,Client(),2024,self.tmp.name)
++  self.assertEqual(x['checked_this_run'],1);self.assertEqual(y['checked_this_run'],0);self.assertEqual(y['remaining'],0)
++
++ def test_modified_data_invalidates_receipt(self):
++  refunds.apply(self.s,self.parsed,body('<p>返還馬番16番</p>'),None,None)
++  self.s.c.execute("delete from payouts where bet_type='REFUND'")
++  self.assertEqual(refunds.audit(self.s.c,2024)['receipt_data_mismatches'],1)
++ def test_split_horse_frame_nodes(self):
++  row=refunds.parse_refunds(body('<dl><dt>返還</dt><dd><strong>返還馬番16番</strong><strong>返還同枠8枠</strong></dd></dl>'))[0]
++  self.assertEqual(row['refund_frame_numbers'],[8])
++
++ def test_normal_collection_parses_refund_and_stores_receipt(self):
++  from jra_master.racing import integrate_result
++  html=body('<table><thead><th class="place">着順</th></thead><tbody><tr><td class="num">16</td><td class="horse">TEST</td></tr></tbody></table><dl><dt>返還</dt><dd>返還馬番16番</dd></dl>')
++  sid=self.s.source(dict(service='JRA',role='RESULT_HTML',url='https://www.jra.go.jp/JRADB/accessS.html'));self.s.c.commit()
++  with patch('jra_master.racing.parse_result',return_value=self.parsed):integrate_result(self.s,html,sid,RID)
++  self.assertEqual(refunds.audit(self.s.c,2024)['status'],'PASS')
++  self.assertEqual(self.s.c.execute("select count(*) from payouts where bet_type='REFUND'").fetchone()[0],1)
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -3,7 +3,7 @@
+ build-backend = "setuptools.build_meta"
+ [project]
+ name = "jra-original-master"
+-version = "2.4.6"
++version = "2.4.7"
+ requires-python = ">=3.11"
+ dependencies = ["beautifulsoup4>=4.12,<5", "lxml>=5,<7"]
+ [tool.setuptools]
