@@ -4,14 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       start_year:
-        description: 開始年（2010〜2025、最初は2025だけで確認）
+        description: 開始年（2010〜2025、最初は2024だけで確認）
         required: true
-        default: '2025'
+        default: '2024'
         type: string
       end_year:
         description: 終了年（開始年以上、上限2025）
         required: true
-        default: '2025'
+        default: '2024'
         type: string
       max_html_pages:
         description: 各年の全レース照合上限。未完了なら同じ設定で再実行
