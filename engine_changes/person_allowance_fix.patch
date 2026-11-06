@@ -1,0 +1,61 @@
+--- a/jra_master/person_identity.py
++++ b/jra_master/person_identity.py
+@@ -6,13 +6,16 @@
+ import datetime,json,re,unicodedata,hashlib,copy
+ from collections import defaultdict
+ 
+-VERSION='PERSON_IDENTITY_1.0.0'
++VERSION='PERSON_IDENTITY_1.0.1'
+ ROLES=('jockey','trainer')
+ 
+ def normalize_name(value):
+  if value is None:return None
+  if not isinstance(value,str):raise ValueError('NON_STRING_PERSON_NAME')
+- name=re.sub(r'\s+','',unicodedata.normalize('NFKC',value))
++ # Official allowance symbols describe a ride, not the person's identity.
++ display=unicodedata.normalize('NFKC',value).strip()
++ display=re.sub(r'^[★▲△☆◇]\s*','',display)
++ name=re.sub(r'\s+','',display)
+  return name or None
+ 
+ def normalize_official_id(value):
+--- /dev/null
++++ b/tests/test_allowance_person_identity.py
+@@ -0,0 +1,26 @@
++"""Allowance marks describe a ride; they must not split model person histories."""
++import unittest
++from jra_master.person_identity import normalize_name,build_catalogue,resolve,target_catalogue
++class AllowanceIdentityTests(unittest.TestCase):
++ def record(self,name,pid=None,date='2020-01-01'):
++  return dict(role='jockey',name=name,official_id=pid,race_date=date)
++ def test_all_five_official_allowance_marks(self):
++  for mark in '★▲△☆◇':
++   with self.subTest(mark=mark):self.assertEqual(normalize_name(' '+mark+' 山本　咲希到 '),'山本咲希到')
++ def test_name_only_history_uses_same_key(self):
++  c=build_catalogue([],'2020-01-01');a=resolve('jockey',None,'☆ 落合 玄太',c);b=resolve('jockey',None,'落合 玄太',c)
++  self.assertEqual(a['key'],b['key']);self.assertIsNone(a['official_id'])
++ def test_original_source_record_is_not_mutated(self):
++  r=self.record('☆ 落合 玄太');build_catalogue([r],'2020-01-01');self.assertEqual(r['name'],'☆ 落合 玄太');self.assertIsNone(r['official_id'])
++ def test_known_id_alias_keeps_unknown_source_id(self):
++  c=build_catalogue([self.record('落合 玄太','1234')],'2020-01-01');r=resolve('jockey',None,'☆ 落合 玄太',c)
++  self.assertEqual(r['key'],'JRA_ID:jockey:1234');self.assertIsNone(r['official_id'])
++ def test_conflicting_ids_still_rejected(self):
++  c=build_catalogue([self.record('落合 玄太','1234')],'2020-01-01')
++  with self.assertRaises(ValueError):resolve('jockey','9999','☆ 落合 玄太',c)
++ def test_future_profile_link_not_used(self):
++  c=build_catalogue([self.record('落合 玄太','1234','2021-01-01')],'2020-01-01');self.assertEqual(resolve('jockey',None,'☆ 落合 玄太',c)['status'],'NAME_ONLY')
++ def test_ordinary_and_foreign_names(self):
++  self.assertEqual(normalize_name('Ｍ．デムーロ'),'M.デムーロ');self.assertEqual(normalize_name('田中 淳司'),'田中淳司');self.assertNotEqual(normalize_name('田中 学'),normalize_name('田中 純'));self.assertIsNone(normalize_name(None))
++ def test_only_leading_allowance_is_removed(self):
++  self.assertEqual(normalize_name('A☆B'),'A☆B')
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -3,7 +3,7 @@
+ build-backend = "setuptools.build_meta"
+ [project]
+ name = "jra-original-master"
+-version = "2.4.7"
++version = "2.4.8"
+ requires-python = ">=3.11"
+ dependencies = ["beautifulsoup4>=4.12,<5", "lxml>=5,<7"]
+ [tool.setuptools]
