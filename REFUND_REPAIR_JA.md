@@ -41,3 +41,25 @@ python scripts/audit_trace_person_reference.py --common /path/project_sources/06
 ## コードの確認
 
 取得エンジンは既存と同じ `jra_original_master_engine.zip` に収録する。`engine_changes/refund_fix.patch` に元パッケージとの差分を読みやすい形で添付する。`JRA 返還修正の自己検査` はネットワーク取得を行わず、パッケージの全単体テストと修復の保持検査を実行する。
+
+
+
+## 2026年の更新・返還全件照合
+
+`JRA 2026 更新・返還全件照合`（jra_current_refund_repair.yml）をmainで手動実行する。
+`resume_run_id`は通常空欄（同年の最新state）、`max_html_pages`は4000。
+確認時点の直近2026年stateの出典はrun 41387053696。Releaseへはリセットしない。
+
+通常updateで未取得分と公開済み馬場PDFを補完した後、その実行のstateと更新監査を次ジョブへ引き継ぐ。
+次ジョブは収録済みの全2026年レースを返還照合する。別ジョブに分け、通常更新と返還再照合それぞれの時間枠を確保する。
+返還段階では既存の全非技術テーブル（REFUND以外の払戻を含む）を修復前と全行比較する。
+未照合・照合エラー・保持検査失敗では配布ZIPを公開せず、stateを保存して再開する。
+
+通常更新の取得状態と返還照合の状態は別に監査する。馬場PDF未取得だけが残った場合は、
+返還照合完了を明示したPROVISIONAL_NOT_CERTIFIEDの週次スナップショットを出力する。
+正式認証へ偽装せず、元の認証条件を緩和しない。出力後にZIP CRC・SQLiteハッシュ・返還全件照合を再確認する。
+対象はMASTER収録済みレースであり、JRA全開催日程との独立した通年完全性確認とは区別する。
+
+Actions開始は利用者が担当し、完了URLを受けて原本とCURRENTを確認・更新する。
+CURRENTのファイル名はTRACE_CURRENT_2026.zipを維持し、モデル・校正・Kは変更しない。
+検証・監査結果はActions側で確認し、利用者の配布ファイル群へ独立した監査ZIPを追加しない。
