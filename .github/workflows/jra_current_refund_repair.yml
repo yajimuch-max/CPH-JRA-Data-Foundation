@@ -1,0 +1,143 @@
+name: JRA 2026 更新・返還全件照合
+run-name: "JRA 2026 update + refund | run ${{ github.run_id }}"
+on:
+  workflow_dispatch:
+    inputs:
+      resume_run_id:
+        description: 空欄は2026年の最新state。再開時も通常は空欄
+        type: string
+        default: ''
+      max_html_pages:
+        description: 更新・返還照合それぞれの上限。未完了なら同じ設定で再実行
+        type: string
+        default: '4000'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: jra-original-master-2026
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_YEAR: '2026'
+      MODE: update
+      BASE_RELEASE_TAG: ''
+      BASE_ASSET_NAME: ''
+      WITH_PEDIGREE: 'true'
+      WITH_TRACK: 'true'
+      WITH_OFFICIAL: 'true'
+      MAX_HTML_PAGES: ${{ inputs.max_html_pages }}
+      MAX_HORSES: '12000'
+      MAX_SOURCES: '12000'
+      RESET_FROM_RELEASE: 'false'
+      REFRESH: 'false'
+      RESUME_RUN_ID: ${{ inputs.resume_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 入力検査・取得エンジン準備
+        run: |
+          python - <<'PYCODE'
+          import os, zipfile
+          assert 1 <= int(os.environ['MAX_HTML_PAGES']) <= 4000
+          with zipfile.ZipFile('jra_original_master_engine.zip') as archive:
+              assert archive.testzip() is None
+              archive.extractall('engine')
+          PYCODE
+          python -m pip install -e engine "pdfplumber>=0.11,<1" "requests>=2.31,<3"
+      - name: オフライン自己検査
+        env:
+          PYTHONPATH: engine
+        run: |
+          python -m unittest discover -s engine/tests -v
+          python -m unittest discover -s tests -v
+      - uses: actions/cache@v4
+        with:
+          path: |
+            jra_pdf_cache
+            jra_html_cache
+            jra_person_cache
+          key: jra-track-cache-2026-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: jra-track-cache-2026-
+      - name: 2026年の最新stateを復元（リセットしない）
+        run: python engine/scripts/restore_state.py --year 2026 --run-id "$RESUME_RUN_ID"
+      - name: 通常更新（公開済み馬場PDFも再確認）
+        run: python engine/scripts/action_run.py
+      - name: 更新後stateを保存（失敗時も）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-original-state-2026
+          path: state/2026/MASTER.sqlite3
+          if-no-files-found: warn
+          retention-days: 90
+      - name: 更新監査を保存・次ジョブへ引継ぎ
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-current-update-audit-2026
+          path: delivery/*.json
+          if-no-files-found: warn
+          retention-days: 90
+  refunds:
+    needs: update
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      MAX_HTML_PAGES: ${{ inputs.max_html_pages }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 取得エンジン準備
+        run: |
+          unzip -q jra_original_master_engine.zip -d engine
+          python -m pip install -e engine "pdfplumber>=0.11,<1" "requests>=2.31,<3"
+      - uses: actions/download-artifact@v4
+        with:
+          name: jra-original-state-2026
+          path: state/2026
+      - uses: actions/download-artifact@v4
+        with:
+          name: jra-current-update-audit-2026
+          path: update_audit
+      - uses: actions/cache@v4
+        with:
+          path: jra_refund_cache
+          key: jra-refund-2026-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: jra-refund-2026-
+      - name: 返還全件照合・全非技術テーブル保持検査・再出力
+        run: python scripts/current_refund_repair.py --db state/2026/MASTER.sqlite3 --stage-audit update_audit/unified_audit_2026.json --max-pages "$MAX_HTML_PAGES"
+      - name: 修復stateを保存（未完了でも再開可能）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-original-state-2026
+          path: state/2026/MASTER.sqlite3
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: 返還・保持・原本監査を保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-refund-audit-2026
+          path: delivery/*.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: 全件照合完了の原本を保存（暫定認証状態は保持）
+        uses: actions/upload-artifact@v4
+        with:
+          name: jra-original-master-2026
+          path: |
+            delivery/*.zip
+            delivery/*.sha256
+          if-no-files-found: error
+          retention-days: 90
