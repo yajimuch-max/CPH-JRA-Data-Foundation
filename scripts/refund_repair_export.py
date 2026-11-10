@@ -3,27 +3,8 @@ import argparse,json,sqlite3,sys,hashlib
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/'engine'),str(ROOT/'scripts')]
-from historical_person_export import baseline,person_diff,rows,PRESERVED
-TECHNICAL={'metadata','source_records','race_sources','revisions','refund_receipts','host_budget'}
-
-def tables(c):return {r[0] for r in c.execute("select name from sqlite_master where type='table'") if not r[0].startswith('sqlite_')}
-def table_rows(c,table,where=''):
- cols=[r[1] for r in c.execute('pragma table_info("'+table.replace('"','""')+'")')]
- return cols,[tuple(r) for r in c.execute('select * from "'+table.replace('"','""')+'" '+where+' order by '+','.join('"'+col+'"' for col in cols))]
-def unchanged(a,b,table,where=''):
- if table_rows(a,table,where)!=table_rows(b,table,where):raise ValueError('PRESERVATION_FAILED:'+table)
-def preserve(a,b,baseline_comparison=False):
- if not tables(a).issubset(tables(b)):raise ValueError('EXISTING_TABLE_REMOVED')
- checked=[]
- for t in sorted(PRESERVED if baseline_comparison else tables(a)-TECHNICAL):
-  if t not in tables(a):continue
-  if t=='payouts':unchanged(a,b,t,"where bet_type<>'REFUND'")
-  elif baseline_comparison and t=='runners':continue
-  else:unchanged(a,b,t)
-  checked.append(t)
- if baseline_comparison:person_diff(rows(a),rows(b))
- if not tables(a).issubset(tables(b)):raise ValueError('EXISTING_TABLE_REMOVED')
- return checked
+from historical_person_export import baseline
+from repair_integrity import preserve
 
 def main():
  p=argparse.ArgumentParser();p.add_argument('--year',type=int,required=True);p.add_argument('--source',type=Path,required=True);p.add_argument('--db',type=Path,required=True);p.add_argument('--output',type=Path,default=Path('delivery'));p.add_argument('--cache',type=Path,default=Path('jra_refund_cache'));p.add_argument('--max-pages',type=int,default=4000);a=p.parse_args()
@@ -52,3 +33,4 @@ def main():
  if audit['status']!='CERTIFIED':raise ValueError('EXPORT_NOT_CERTIFIED:'+','.join(audit['blockers']))
  print('REFUND_REPAIRED_MASTER_CERTIFIED',a.year,flush=True);return 0
 if __name__=='__main__':sys.exit(main())
+

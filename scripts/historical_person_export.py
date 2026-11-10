@@ -1,38 +1,9 @@
 """Verify a person-only repair against a pinned original, then audit/export it."""
-import argparse,collections,hashlib,json,sqlite3,sys,zipfile
+import argparse,hashlib,json,sqlite3,sys,zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'engine'))
-ALLOWED={'jockey_name','jockey_id','trainer_name','trainer_id'}
-PRESERVED=('races','horses','results','win_odds','payouts','laps','corners','pedigree','pedigree_receipts','official_track_daily','official_track_pdf_receipts','official_html_receipts','official_html_races','official_html_runners','official_html_revisions','tasks','issues')
-
-def person_diff(old,new):
- if old.keys()!=new.keys():raise ValueError('RUNNER_SET_CHANGED')
- counts=collections.Counter()
- for key,(hid,x) in old.items():
-  newhid,y=new[key]
-  if hid!=newhid:raise ValueError('HORSE_ID_CHANGED')
-  for col in x.keys()|y.keys():
-   if x.get(col)==y.get(col):continue
-   if col not in ALLOWED or x.get(col) is not None and str(x[col]).strip():raise ValueError('NONMISSING_OR_NONPERSON_FIELD_CHANGED')
-   if y.get(col) is None or not str(y[col]).strip():raise ValueError('INVALID_PERSON_REPLACEMENT')
-   counts[col]+=1
- return dict(counts)
-
-def rows(c):
- return {(rid,no):(hid,json.loads(raw)) for rid,no,hid,raw in c.execute('select race_id,horse_number,horse_id,payload_json from runners')}
-
-def compare(a,b):
- tables={r[0] for r in a.execute("select name from sqlite_master where type='table'")};checked={}
- for table in PRESERVED:
-  if table not in tables:continue
-  cols=[r[1] for r in a.execute('pragma table_info('+table+')')]
-  if cols!=[r[1] for r in b.execute('pragma table_info('+table+')')]:raise ValueError('TABLE_SCHEMA_CHANGED:'+table)
-  q='select * from '+table+' order by '+','.join('"'+col+'"' for col in cols)
-  aa=a.execute(q).fetchall();bb=b.execute(q).fetchall()
-  if aa!=bb:raise ValueError('NONPERSON_TABLE_CHANGED:'+table)
-  checked[table]=len(aa)
- return dict(exact_preserved_tables=checked,person_fields_changed=person_diff(rows(a),rows(b)))
+from repair_integrity import compare_person_repair as compare, person_diff
 
 def baseline(path,year):
  pins=json.loads((ROOT/'historical_sources.json').read_text());pin=pins[str(year)]
@@ -77,3 +48,4 @@ def main():
  print('HISTORICAL_REPAIRED_MASTER_VERIFIED',a.year,dest.stat().st_size,flush=True)
 
 if __name__=='__main__':main()
+
