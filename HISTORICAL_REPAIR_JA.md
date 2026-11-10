@@ -1,5 +1,7 @@
 # 2010〜2025年の人物修復と原本再出力
 
+> この手順は過去年原本の一括修復の記録。再実行が必要な場合は `.github/workflow-archive/jra_historical_person_repair.yml` を `.github/workflows/` に戻してから使う。
+
 既存原本はRelease inputs-YYYYに保持し、別のActions成果物へ更新版を出す。元Releaseを上書きしない。
 
 Actionsの「JRA 過去年・人物修復と原本再出力」を手動実行する。まずstart_year=2025、end_year=2025、max_html_pages=4000で確認。合格後は2010〜2024を指定すると新しい年から順に1年ずつ処理する。上限到達なら同じ指定で再実行してstateを継続する。既存の通常ワークフローと年ごとの排他制御を共有する。
