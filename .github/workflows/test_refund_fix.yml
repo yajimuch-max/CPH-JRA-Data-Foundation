@@ -1,7 +1,6 @@
-name: JRA 返還修正の自己検査
+name: JRA データ更新の自動テスト
 on:
   pull_request:
-  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -11,7 +10,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - name: パッケージ展開・依存準備
         run: |
           python - <<'PY'

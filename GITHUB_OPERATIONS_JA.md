@@ -1,5 +1,7 @@
 # TRACE GitHub連携・原本更新 運用仕様
 
+> Actionsの手動実行は「JRA 原本MASTER・手動差分更新」を使う。PRの単体テストは自動で動く。過去年の人物・返還修復と、2026年の返還照合専用の定義は `.github/workflow-archive/` に保管した。下記の専用Actionsの手順は修復時の記録で、再実行が必要な場合は対象の定義を `.github/workflows/` へ戻してから使う。
+
 版: 1.1 / 確認日: 2026-11-02 JST
 対象: yajimuch-max/CPH-JRA-Data-Foundation
 
